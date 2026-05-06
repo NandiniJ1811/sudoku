@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sudoku Solver</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f10;
+      --surface:   #1a1a1d;
+      --surface2:  #242428;
+      --border:    #2e2e33;
+      --border2:   #44444b;
+      --text:      #e8e6e1;
+      --muted:     #6b6973;
+      --accent:    #c9a96e;   /* warm gold */
+      --accent-bg: #1e1a11;
+      --given-bg:  #1c1c20;
+      --given-fg:  #e8e6e1;
+      --solved-fg: #78c99a;
+      --solved-bg: #0d1f15;
+      --error-fg:  #e07070;
+      --error-bg:  #1f0d0d;
+      --cell-size: 56px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Fraunces', Georgia, serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 3rem 1rem 4rem;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────── */
+    .container {
+      width: 100%;
+      max-width: 560px;
+    }
+
+    .header {
+      margin-bottom: 2.5rem;
+    }
+
+    .header h1 {
+      font-size: 2.6rem;
+      font-weight: 300;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+
+    .header h1 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+
+    .header p {
+      margin-top: 0.6rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── Board ────────────────────────────────────────────────────── */
+    .board-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: inline-block;
+      margin-bottom: 1.5rem;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(9, var(--cell-size));
+      grid-template-rows: repeat(9, var(--cell-size));
+      /* thick borders between 3×3 boxes via gap trickery */
+      gap: 1px;
+      background: var(--border);
+      border: 2px solid var(--border2);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    /* Box separator lines — add thicker right/bottom border on cells
+       at columns 3,6 and rows 3,6 */
+    .cell {
+      width: var(--cell-size);
+      height: var(--cell-size);
+      background: var(--surface);
+      border: none;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.3rem;
+      font-weight: 500;
+      color: var(--text);
+      text-align: center;
+      outline: none;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      -moz-appearance: textfield;
+      caret-color: transparent;
+    }
+    .cell::-webkit-outer-spin-button,
+    .cell::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+    .cell:focus  { background: var(--accent-bg); color: var(--accent); }
+    .cell.given  { background: var(--given-bg);  color: var(--given-fg); cursor: default; }
+    .cell.solved { background: var(--solved-bg); color: var(--solved-fg); }
+    .cell.error  { background: var(--error-bg);  color: var(--error-fg); }
+
+    /* box borders: right side of col 2 and 5 (0-indexed) */
+    .cell.box-r { border-right: 2px solid var(--border2); }
+    /* box borders: bottom of row 2 and 5 */
+    .cell.box-b { border-bottom: 2px solid var(--border2); }
+
+    /* ── Controls ─────────────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+
+    button {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    button:hover { color: var(--text); border-color: var(--text); }
+    button:active { transform: scale(0.97); }
+
+    button.primary {
+      background: var(--accent);
+      color: #111;
+      border-color: var(--accent);
+      font-weight: 500;
+    }
+    button.primary:hover { filter: brightness(1.1); }
+
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Status message ───────────────────────────────────────────── */
+    .status {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      min-height: 1.2rem;
+      color: var(--muted);
+      transition: color 0.2s;
+    }
+    .status.ok  { color: var(--solved-fg); }
+    .status.err { color: var(--error-fg); }
+
+    /* ── Spinner ──────────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header class="header">
+    <h1>Sudoku<br><em>Solver</em></h1>
+    <p>Backtracking algorithm · Python + Flask</p>
+  </header>
+
+  <div class="board-wrap">
+    <div class="board" id="board" role="grid" aria-label="Sudoku grid"></div>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="btn-solve" onclick="solveBoard()">Solve</button>
+    <button onclick="loadExample()">Load example</button>
+    <button onclick="clearBoard()">Clear</button>
+  </div>
+
+  <p class="status" id="status"></p>
+
+</div>
+
+<script>
+  /* ── State ──────────────────────────────────────────────────────── */
+  let cells = [];       // 9×9 array of <input> elements
+  let givenMask = [];   // 9×9 bool: true = user-entered "given" cell
+
+  const EXAMPLE = [
+    [0,0,2,0,0,8,0,0,0],
+    [0,0,0,0,0,3,7,6,2],
+    [4,3,0,0,0,0,8,0,0],
+    [0,5,0,0,3,0,0,9,0],
+    [0,4,0,0,0,0,0,2,6],
+    [0,0,0,4,6,7,0,0,0],
+    [0,8,6,7,0,4,0,0,0],
+    [0,0,0,5,1,9,0,0,8],
+    [1,7,0,0,0,6,0,0,5]
+  ];
+
+  /* ── Build grid ─────────────────────────────────────────────────── */
+  function buildGrid() {
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    cells = [];
+    givenMask = Array.from({length:9}, () => Array(9).fill(false));
+
+    for (let r = 0; r < 9; r++) {
+      cells.push([]);
+      for (let c = 0; c < 9; c++) {
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = 1; inp.max = 9;
+        inp.className = 'cell';
+        inp.setAttribute('aria-label', `Row ${r+1} column ${c+1}`);
+
+        // Box separator classes
+        if (c === 2 || c === 5) inp.classList.add('box-r');
+        if (r === 2 || r === 5) inp.classList.add('box-b');
+
+        inp.addEventListener('keydown', e => handleKey(e, r, c));
+        inp.addEventListener('input', () => handleInput(inp));
+
+        board.appendChild(inp);
+        cells[r].push(inp);
+      }
+    }
+  }
+
+  function handleKey(e, r, c) {
+    const allowed = ['1','2','3','4','5','6','7','8','9',
+                     'Backspace','Delete','Tab',
+                     'ArrowLeft','ArrowRight','ArrowUp','ArrowDown'];
+    if (!allowed.includes(e.key)) { e.preventDefault(); return; }
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      cells[r][c].value = '';
+      e.preventDefault();
+    }
+    const moves = { ArrowRight:[r,c+1], ArrowLeft:[r,c-1], ArrowDown:[r+1,c], ArrowUp:[r-1,c] };
+    if (moves[e.key]) {
+      const [nr,nc] = moves[e.key];
+      if (cells[nr]?.[nc]) { cells[nr][nc].focus(); e.preventDefault(); }
+    }
+  }
+
+  function handleInput(inp) {
+    if (inp.value.length > 1) inp.value = inp.value.slice(-1);
+    if (inp.value && (inp.value < 1 || inp.value > 9)) inp.value = '';
+    inp.classList.remove('solved','error');
+    setStatus('');
+  }
+
+  /* ── Read / write board ─────────────────────────────────────────── */
+  function getBoard() {
+    return cells.map(row => row.map(inp => parseInt(inp.value) || 0));
+  }
+
+  function renderBoard(data, mask) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const inp = cells[r][c];
+        inp.value = data[r][c] || '';
+        inp.classList.remove('given','solved','error');
+        if (mask?.[r][c] && data[r][c]) inp.classList.add('given');
+      }
+    }
+  }
+
+  /* ── Actions ────────────────────────────────────────────────────── */
+  function loadExample() {
+    const mask = EXAMPLE.map(row => row.map(v => v !== 0));
+    givenMask = mask;
+    renderBoard(EXAMPLE, mask);
+    setStatus('');
+  }
+
+  function clearBoard() {
+    givenMask = Array.from({length:9}, () => Array(9).fill(false));
+    renderBoard(Array.from({length:9}, () => Array(9).fill(0)), null);
+    setStatus('');
+  }
+
+  async function solveBoard() {
+    const board = getBoard();
+
+    // Reset error highlights
+    cells.flat().forEach(inp => inp.classList.remove('error'));
+
+    setStatus('<span class="spinner"></span>Solving…');
+    document.getElementById('btn-solve').disabled = true;
+
+    try {
+      const res = await fetch('/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ board })
+      });
+      const data = await res.json();
+
+      if (data.solved) {
+        // Mark newly filled cells as "solved" (green)
+        const original = board;
+        for (let r = 0; r < 9; r++) {
+          for (let c = 0; c < 9; c++) {
+            cells[r][c].value = data.board[r][c];
+            cells[r][c].classList.remove('error');
+            if (!original[r][c]) cells[r][c].classList.add('solved');
+          }
+        }
+        setStatus('Solved!', 'ok');
+      } else {
+        setStatus(data.error || 'No solution found.', 'err');
+      }
+    } catch (err) {
+      setStatus('Could not reach the server. Is Flask running?', 'err');
+    }
+
+    document.getElementById('btn-solve').disabled = false;
+  }
+
+  /* ── Helpers ────────────────────────────────────────────────────── */
+  function setStatus(html, cls = '') {
+    const el = document.getElementById('status');
+    el.innerHTML = html;
+    el.className = 'status ' + cls;
+  }
+
+  /* ── Init ───────────────────────────────────────────────────────── */
+  buildGrid();
+</script>
+</body>
+</html>
